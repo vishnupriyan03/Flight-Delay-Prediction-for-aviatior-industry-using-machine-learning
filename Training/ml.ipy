@@ -1,0 +1,238 @@
+import pandas as pd
+import numpy as np
+import pickle
+import matplotlib.pyplot as plt
+%matplotlib inline
+import seaborn as sns
+import sklearn
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import RandomizedSearchCV
+import imblearn
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, f1_score
+
+dataset=pd.read_csv("flightdata.csv") 
+
+print(dataset.head())
+
+print(dataset.info())
+
+dataset = dataset.drop('Unnamed: 25',axis=1)
+print(dataset.isnull().sum())
+
+dataset = dataset[["FL_NUM", "MONTH", "DAY_OF_MONTH", "DAY_OF_WEEK", "ORIGIN", "DEST", "CRS_ARR_TIME", "DEP_DEL15", "ARR_DEL15","ARR_DELAY"]]
+print(dataset.isnull().sum())
+
+print(dataset[dataset.isnull().any(axis=1)].head(10))
+
+print(dataset['DEP_DEL15'].mode())
+
+dataset = dataset.fillna({'ARR_DEL15': 1})
+dataset = dataset.fillna({'DEP_DEL15': 0})
+print(dataset.iloc[177:185])
+
+import math
+for index, row in dataset.iterrows():
+    dataset.loc[index, 'CRS_ARR_TIME'] = math.floor(row['CRS_ARR_TIME'] / 100)
+print(dataset.head())
+
+from sklearn.preprocessing import LabelEncoder
+le = LabelEncoder()
+dataset['DEST'] = le.fit_transform(dataset['DEST'])
+dataset['ORIGIN'] = le.fit_transform(dataset['ORIGIN']) 
+#print(dataset['DEST'])
+#print(dataset['ORIGIN'])
+
+print(dataset.head(5))
+
+print(dataset['ORIGIN'].unique())
+
+dataset = pd.get_dummies(dataset, columns=['ORIGIN', 'DEST'])
+print(dataset.head())
+
+x = dataset.iloc[:, 0:8].values
+y = dataset.iloc[:, 8:9].values
+
+print(x)
+
+from sklearn.preprocessing import OneHotEncoder
+oh = OneHotEncoder()
+z=oh.fit_transform(x[:,4:5]).toarray()
+t=oh.fit_transform(x[:,5:6]).toarray()
+
+print(z)
+print(t)
+
+x=np.delete(x,[4,5],axis=1)
+
+print(dataset.describe())
+
+print(sns.distplot(dataset.MONTH))
+
+print(sns.scatterplot(y='ARR_DEL15',data=dataset,x='ARR_DELAY'))
+
+print(sns.catplot(x="ARR_DEL15",y="ARR_DELAY",kind='bar',data=dataset))
+
+print(sns.heatmap(dataset.corr()))
+
+from sklearn.model_selection import train_test_split
+x_train,x_test,y_train,y_test=train_test_split(x,y,test_size=0.2,random_state=0)
+
+from sklearn.model_selection import train_test_split
+train_x,text_x,train_y,test_y=train_test_split(dataset.drop('ARR_DEL15',axis=1),dataset['ARR_DEL15'],test_size=0.2,random_state=0)
+
+print(x_test.shape)
+
+print(x_train.shape)
+
+print(y_test.shape)
+
+print(y_train.shape)
+
+from sklearn.preprocessing import StandardScaler
+sc=StandardScaler()
+x_train=sc.fit_transform(x_train)
+x_test=sc.transform(x_test)
+
+x_train=np.nan_to_num(x_train)
+from sklearn.tree import DecisionTreeClassifier
+classifier = DecisionTreeClassifier(random_state=0)
+print(classifier.fit(x_train,y_train))
+
+x_test=np.nan_to_num(x_test)
+decisiontree=classifier.predict(x_test)
+
+print(decisiontree)
+
+from sklearn.metrics import accuracy_score
+desacc=accuracy_score(y_test,decisiontree)
+
+from sklearn.ensemble import RandomForestClassifier
+rfc=RandomForestClassifier(n_estimators=10,criterion='entropy')
+
+print(rfc.fit(x_train,y_train))
+
+y_predict=rfc.predict(x_test)
+
+import tensorflow
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense
+
+classification=Sequential()
+classification.add(Dense(30,activation='relu'))
+classification.add(Dense(128,activation='relu'))
+classification.add(Dense(64,activation='relu'))
+classification.add(Dense(32,activation='relu'))
+classification.add(Dense(1,activation='sigmoid'))
+
+classification.compile(optimizer='adam',loss='binary_crossentropy',metrics=['accuracy'])
+
+print(classification.fit(x_train,y_train,batch_size=4,validation_split=0.2,epochs=100))
+
+y_pred=classifier.predict([[129,99,1,0,0,1]])
+
+print(y_pred)
+
+classification.save('flight.h5')
+
+y_pred=classification.predict(x_test)
+
+print(y_pred)
+
+y_pred=(y_pred>0.5)
+print(y_pred)
+
+def predict_exist(sample_value):
+  sample_value=np.array(sample_value)
+  sample_value=sample_value.reshape(1,-1)
+  sample_value=sc.transform(sample_value)
+  return classifier.predict(sample_value)
+
+test=classification.predict([[1,1,121.000000,36.0,0,0]])
+if test==1:
+  print('Prediction: Chance of delay')
+else:
+  print('Prediction: No chance of delay.')
+  
+from sklearn import model_selection
+from sklearn.neural_network import MLPClassifier
+
+dfs=[]
+models=[
+    ('RF',RandomForestClassifier()),
+    ('DecisionTree',DecisionTreeClassifier()),
+    ('ANN',MLPClassifier())
+    ]
+results=[]
+names=[]
+scoring=['accuracy','precision_weighted','recall_weighted','f1_weighted','roc_auc']
+target_names=['no delay','delay']
+for name,model in models:
+    kfold=model_selection.KFold(n_splits=2,shuffle=True,random_state=90210)
+    cv_results=model_selection.cross_validate(model,x_train,y_train,cv=kfold,scoring=scoring)
+    clf=model.fit(x_train,y_train)
+    y_pred=clf.predict(x_test)
+    print(name)
+    print(classification_report(y_test,y_pred,target_names=target_names))
+    results.append(name)
+    this_df=pd.DataFrame(cv_results)
+    this_df['model']=name
+    dfs.append(this_df)
+    final=pd.concat(dfs,ignore_index=True)
+    
+#print('Training accuracy: ',accuracy_score(y_train,y_predict))
+print('Testing accuracy: ',accuracy_score(y_test,y_predict))
+
+from sklearn.metrics import confusion_matrix
+cm=confusion_matrix(y_test,y_predict)
+print(cm)
+
+from sklearn.metrics import accuracy_score
+desacc=accuracy_score(y_test,decisiontree)
+
+print(desacc)
+
+from sklearn.metrics import confusion_matrix
+cm=confusion_matrix(y_test,decisiontree)
+
+print(cm)
+
+from sklearn.metrics import accuracy_score,classification_report
+score=accuracy_score(y_pred,y_test)
+print('The accuracy for ANN model is: {}%',format(score*100))
+
+from sklearn.metrics import confusion_matrix
+cm=confusion_matrix(y_test,y_pred)
+print(cm)
+
+parameters={
+    'n_estimators' : [1,20,30,55,68,74,90,120,115],
+    'criterion':['gini','entropy'],
+    'max_features':["auto",'sqrt',"log2"],
+    'max_depth':[2,5,8,10],'verbose':[1,2,3,4,6,8,9,10]
+}
+
+RCV=RandomizedSearchCV(estimator=rfc,param_distributions=parameters,cv=10,n_iter=4)
+
+print(RCV.fit(x_train,y_train))
+
+bt_params=RCV.best_params_
+bt_score=RCV.best_score_
+
+print(bt_params)
+
+print(bt_score)
+
+model=RandomForestClassifier(verbose=10,n_estimators=120,max_features='log2',max_depth=10,criterion='entropy')
+print(RCV.fit(x_train,y_train))
+
+y_predict_rfc=RCV.predict(x_test)
+
+RFC=accuracy_score(y_test,y_predict_rfc)
+print(RFC)
+
+import pickle
+pickle.dump(RCV,open('flight.pkl','wb'))
